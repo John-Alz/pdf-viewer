@@ -30,13 +30,12 @@
   </div>
 
   <script>
-    // Helpers
     const qs = new URLSearchParams(location.search);
-    const SID = qs.get('sid') || '';     // studentId
-    const CID = qs.get('cid') || '';     // courseId
-    const TID = qs.get('tid') || '';     // stageId (unitId)
-    const GAS = qs.get('gas') || '';     // GAS deployId
-    const PDF = qs.get('pdf') || '';     // modo directo
+    const SID = qs.get('sid') || '';   // studentId
+    const CID = qs.get('cid') || '';   // courseId
+    const TID = qs.get('tid') || '';   // stageId (unitId)
+    const GAS = qs.get('gas') || '';   // Apps Script deployId
+    const PDF = qs.get('pdf') || '';   // modo directo demo
 
     const box = document.getElementById('box');
     const msg = document.getElementById('msg');
@@ -46,7 +45,7 @@
       box.innerHTML =
         `<div class="row" style="margin-bottom:12px">
            <a class="btn" href="${url}" target="_blank" rel="noopener">Abrir PDF en nueva pestaña</a>
-           <button id="refreshBtn" class="btn" style="background:#334155" onclick="location.reload()">Recargar</button>
+           <button class="btn" style="background:#334155" onclick="location.reload()">Recargar</button>
          </div>
          <iframe src="${url}" allow="fullscreen"></iframe>`;
     }
@@ -58,47 +57,28 @@
                        <p><button class="btn" style="background:#b91c1c" onclick="location.reload()">Reintentar</button></p>`;
     }
 
-    // Modo A: PDF directo (demo express)
-    if (PDF) {
+    if (PDF) { // demo rápida: pasar ?pdf=URL
       dbg.textContent = 'modo: pdf directo';
       renderReady(PDF);
-    }
-    // Modo B: JSONP contra tu Apps Script
-    else {
+    } else {
       if (!SID || !CID || !TID || !GAS) {
-        renderError('Faltan parámetros. Usa ?pdf=... (demo rápida) o ?sid=&cid=&tid=&gas=');
+        renderError('Faltan parámetros. Usa ?pdf=... o ?sid=&cid=&tid=&gas=');
       } else {
-        const jsonpUrl =
-          'https://script.google.com/macros/s/' + encodeURIComponent(GAS) + '/exec'
-          + '?path=feedback-jsonp'
-          + '&callback=__faInit'
-          + '&studentId=' + encodeURIComponent(SID)
-          + '&courseId='  + encodeURIComponent(CID)
-          + '&stageId='   + encodeURIComponent(TID);
+        const apiUrl = `/api/feedback?sid=${encodeURIComponent(SID)}&cid=${encodeURIComponent(CID)}&tid=${encodeURIComponent(TID)}&gas=${encodeURIComponent(GAS)}`;
+        dbg.textContent = 'modo: proxy — ' + apiUrl;
 
-        dbg.textContent = 'modo: jsonp — ' + jsonpUrl;
-
-        // timeout por si el script no carga (CSP/ID inválido)
-        const t = setTimeout(()=>renderError('No se pudo cargar el estado (JSONP). Revisa el ID de deploy/URL.'), 8000);
-
-        // callback que invoca tu GAS
-        window.__faInit = function(resp){
-          clearTimeout(t);
-          if (resp && resp.status === 'READY' && resp.urlPdf) {
-            renderReady(resp.urlPdf);
-          } else if (resp && resp.status === 'PENDING') {
-            renderPending('Aún estamos generando tu informe. Esta página no se actualizará sola.');
-          } else {
-            renderError('Respuesta inválida o error en servidor.');
-          }
-        };
-
-        // inyecta el <script> JSONP
-        const s = document.createElement('script');
-        s.src = jsonpUrl;
-        s.async = true;
-        s.onerror = () => { clearTimeout(t); renderError('No se pudo cargar el estado (JSONP).'); };
-        document.body.appendChild(s);
+        fetch(apiUrl)
+          .then(r => r.json())
+          .then(d => {
+            if (d && d.status === 'READY' && d.urlPdf) {
+              renderReady(d.urlPdf);
+            } else if (d && d.status === 'PENDING') {
+              renderPending('Aún estamos generando tu informe. Esta página no se refresca sola.');
+            } else {
+              renderError('Respuesta inválida o error en servidor.');
+            }
+          })
+          .catch(() => renderError('No se pudo consultar el estado (proxy).'));
       }
     }
   </script>
